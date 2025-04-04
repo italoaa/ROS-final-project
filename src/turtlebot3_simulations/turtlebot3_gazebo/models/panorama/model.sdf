@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<sdf version="1.6">
+  <model name="window2">
+    <static>true</static>
+    <link name="robot_link">
+      <collision name="body_collision">
+        <geometry>
+          <plane>
+            <size>0.707 0.5</size>
+          </plane>
+        </geometry>
+      </collision>
+      
+      <visual name="body_visual">
+        <cast_shadows>0</cast_shadows>
+        <geometry>
+          <box>
+            <size>1.0 0.01 1.0</size>
+          </box>
+        </geometry>
+        
+        <material>
+          <script>
+           <uri>model://panorama/materials/scripts/</uri>
+           <uri>model://panorama/materials/textures/</uri>
+           <name>RepeatedTexture2</name>
+          </script>
+        </material>
+      </visual>
+
+    </link>
+  </model>
+</sdf>

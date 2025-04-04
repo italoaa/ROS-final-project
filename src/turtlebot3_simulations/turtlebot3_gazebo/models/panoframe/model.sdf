@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<sdf version="1.6">
+  <model name="pano_frame">
+    <static>true</static>
+    <link name="robot_link">
+      <collision name="body_collision">
+        <geometry>
+          <box>
+            <size>3.949 0.01 1.5</size>
+          </box>
+        </geometry>
+      </collision>
+      
+      <visual name="body_visual">
+        <cast_shadows>0</cast_shadows>
+        <geometry>
+          <box>
+            <size>3.949 0.01 1.5</size>
+          </box>
+        </geometry>
+        
+        <material>
+          <script>
+           <uri>model://panoframe/materials/scripts/</uri>
+           <uri>model://panoframe/materials/textures/</uri>
+           <name>RepeatedTexture_pano</name>
+          </script>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>

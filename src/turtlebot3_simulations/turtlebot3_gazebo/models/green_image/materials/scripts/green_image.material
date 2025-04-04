@@ -1,0 +1,14 @@
+material green_image/Image
+{
+	receive_shadows off 
+	technique
+	{
+	  pass 
+	  {
+		texture_unit
+		{
+			texture green_image.jpg
+		}
+	  }
+	} 
+}
