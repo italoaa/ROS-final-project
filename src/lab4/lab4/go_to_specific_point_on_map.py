@@ -11,7 +11,8 @@ class GoToPose(Node):
         super().__init__('navigation_goal_action_client')
         self.action_client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
 
-    def send_goal(self, x, y, yaw):
+    def send_goal(self, coords):
+        x, y, yaw = coords
         goal_msg = NavigateToPose.Goal()
         goal_msg.pose.header.frame_id = 'map'
         goal_msg.pose.header.stamp = self.get_clock().now().to_msg()
