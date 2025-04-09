@@ -34,45 +34,43 @@ class Robot(Node):
         self.gflag = 0
         self.bflag = 0
         self.rflag = 0
-        self.sensitivity = 90
+        self.sensitivity = 10
 
         # GOTO points
         self.red_box = (-5.0, -2.0, 2.47)
         self.green_box = (3.0, -6.0, -0.48)
-        self.blue_box = (-5.8, -8.8, -0.48)
+        self.blue_box = (-4.5, -8.4, -0.48)
 
         # action client
         self.action_client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
         
         # area of the bounding box
-        self.big_area = 121852.0 # big
-        self.medium_area = 10000.0 
+        # far away from green box to red red box is 14500 in area
+        self.big_area =   10000.0 # big
+        self.medium_area = 1000.0 # we see an object
 
         # goal handles
         self.current_goal_handle = None
-        self.timer = self.create_timer(0.5, self.check_flags)
-
 
     def processImage(self, data):
         image = self.bridge.imgmsg_to_cv2(data, 'bgr8')
+        cv2.namedWindow('Camera Feed',cv2.WINDOW_NORMAL)
+        cv2.imshow('Camera Feed', image)
+        cv2.resizeWindow('Camera Feed',320,240)
+        cv2.waitKey(3)
 
         # Use masks to detect the three colours
         hsv_green_lower = np.array([60 - self.sensitivity, 100, 100])
         hsv_green_upper = np.array([60 + self.sensitivity, 255, 255])
         hsv_blue_lower = np.array([120 - self.sensitivity, 100, 100])
         hsv_blue_upper = np.array([120 + self.sensitivity, 255, 255])   
-        hsv_red_lower1 = np.array([0, 100, 100])
-        hsv_red_upper1 = np.array([self.sensitivity, 255, 255])
-        hsv_red_lower2 = np.array([180 - self.sensitivity, 100, 100])
-        hsv_red_upper2 = np.array([180, 255, 255])
+        hsv_red_lower = np.array([0 - self.sensitivity, 100, 100])
+        hsv_red_upper = np.array([0 + self.sensitivity, 255, 255])
 
         # Convert the rgb image into a hsv image
         hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
-        red_mask1 = cv2.inRange(hsv_image, hsv_red_lower1, hsv_red_upper1)
-        red_mask2 = cv2.inRange(hsv_image, hsv_red_lower2, hsv_red_upper2)
-
-        red_mask = cv2.bitwise_or(red_mask1, red_mask2)
+        red_mask = cv2.inRange(hsv_image, hsv_red_lower, hsv_red_upper)
         green_mask = cv2.inRange(hsv_image, hsv_green_lower, hsv_green_upper)
         blue_mask = cv2.inRange(hsv_image, hsv_blue_lower, hsv_blue_upper)
 
@@ -83,46 +81,59 @@ class Robot(Node):
 
         # Use countours to find the bounding boxes
         # make a different countour for each colour
-        red_countours, _ = cv2.findContours(red_mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-        green_countours, _ = cv2.findContours(green_mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-        blue_countours, _ = cv2.findContours(blue_mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-        flags = [self.rflag, self.gflag, self.bflag]
+        countours = [
+            cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)[0]
+            for mask in [red_mask, green_mask, blue_mask]
+        ]
         # zip
-        countours = [red_countours, green_countours, blue_countours]
-        countours = zip(countours, flags)
-        for i, (cnts, flag) in enumerate(countours):
+        # flags 0 = red 1 = green 2 = blue
+        for i, cnts in enumerate(countours):
             if len(cnts) > 0:
                 # Using the area of the countours, determine if the robot is close enough to the object
-                for cnt in cnts:
-                    area = cv2.contourArea(cnt)
-                    print(f'OBJECT {i} AREA: {area}')
-                    if area < self.big_area: # if we are not close enough
-                        # make a bounding box
-                        x, y, w, h = cv2.boundingRect(cnt)
-                        cv2.rectangle(image, (x, y), (x + w, y + h), (255, 165, 0), 2)
+                c = max(cnts, key=cv2.contourArea)
+                # if the area is big enough, set the flag to 1                
+                print(f'Flags: {[self.rflag, self.gflag, self.bflag]} - Color: {["red", "green", "blue"][i]} - Area: {cv2.contourArea(c)}', end='\r')
 
-                        if i == 2 and self.bflag == 0:
-                            if area > self.medium_area: # if blue is in sight but not close enough
-                                # Special handling for blue
-                                self.get_logger().info("Centering blue object...")
-                                if self.center_object(x, w, image.shape[1]):
-                                    self.get_logger().info("Centered. Moving forward...")
-                                    self.move_forward()
+                # If the area is medium size
+                area = cv2.contourArea(c)
+                if area > self.medium_area:
+                    (x, y), radius = cv2.minEnclosingCircle(c)
+                    center = (int(x), int(y))
+                    radius = int(radius)
+                    cv2.circle(image, center, radius, (0, 255, 0), 2)
 
-                    else: # if we are close enough
-                        # set the flag to 1
-                        flag = 1
-                        # make a green bounding box
-                        x, y, w, h = cv2.boundingRect(cnt)
-                        cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                    if area > self.big_area:
+                        # if we see and it is our goal, we must go to the goal
+                        if i == 0 and self.current_goal_index == 0:
+                            self.rflag = 1
+                            self.get_logger().info("Red object detected. Stopping...")
+                            self.stop()
+                            self.cancel_goal()
+                        elif i == 1 and self.current_goal_index == 1:
+                            self.gflag = 1
+                            self.get_logger().info("Green object detected. Stopping...")
+                            self.stop()
+                            self.cancel_goal()
+                        elif i == 2: # for the blue object we dont mind if it is not our goal
+                            if self.bflag == 1: continue
+                            # we must cancel the goal and center the blue box and go forward
+                            self.bflag = 1
+                            self.get_logger().info("Blue object detected. Stopping...")
+                            self.stop()
+                            self.cancel_goal()
+                            self.get_logger().info("Centering blue object...")
+                            x, y, w, h = cv2.boundingRect(c)
+                            if self.center_object(x, w, image.shape[1]):
+                                self.get_logger().info("Centered. Moving forward...")
+                                self.move_forward()
 
         # Display
         cv2.namedWindow("Filtered Image", cv2.WINDOW_NORMAL)
         cv2.imshow("Filtered Image", filtered_img)
         cv2.resizeWindow("Filtered Image", 320, 240)
-        cv2.namedWindow('Camera Feed',cv2.WINDOW_NORMAL)
-        cv2.imshow('Camera Feed', image)
-        cv2.resizeWindow('Camera Feed',320,240)
+        cv2.namedWindow('Detection Camera Feed',cv2.WINDOW_NORMAL)
+        cv2.imshow('Detection Camera Feed', image)
+        cv2.resizeWindow('Detection Camera Feed',320,240)
         cv2.waitKey(3)
         # Check if the area of the shape you want is big enough to be considered
 
@@ -145,16 +156,14 @@ class Robot(Node):
         self.send_goal_future = self.action_client.send_goal_async(goal_msg)
         self.send_goal_future.add_done_callback(self.goal_response_callback)
 
-    # from lab 4
-    def goal_response_callback(self, future):
-        goal_handle = future.result()
-        if not goal_handle.accepted:
-            self.get_logger().info('Goal rejected')
-            return
-
-        self.get_logger().info('Goal accepted')
-        self.get_result_future = goal_handle.get_result_async()
-        self.get_result_future.add_done_callback(self.get_result_callback)
+    # Method to cancel the goal
+    def cancel_goal(self):
+        if self.current_goal_handle is not None:
+            self.current_goal_handle.cancel_goal_async()
+            self.get_logger().info('Goal cancelled')
+            self.current_goal_handle = None
+        else:
+            self.get_logger().info('No goal to cancel')
 
     def center_object(self, x, w, frame_width):
         # Center of the object
@@ -174,37 +183,8 @@ class Robot(Node):
 
     def move_forward(self):
         twist = Twist()
-        twist.linear.x = 0.1
+        twist.linear.x = 0.2
         self.publisher.publish(twist)
-
-
-    def check_flags(self):
-        flags = [self.gflag, self.rflag, self.bflag]
-        if self.current_goal_index < len(flags):
-            # if we are looking for the blue box and we see it but it is not close enough
-            if self.current_goal_index == 2 and self.bflag == 1 and self.current_goal_handle:
-                self.get_logger().info("Blue object found. Cancelling goal for visual tracking.")
-                self.current_goal_handle.cancel_goal_async()
-                self.current_goal_handle = None
-                return  # Let processImage handle the movement
-
-            # Handle for the red and blue boxes
-            if flags[self.current_goal_index] == 1 and self.current_goal_handle:
-                self.get_logger().info("Target found! Cancelling current goal.")
-                self.current_goal_handle.cancel_goal_async()
-                self.current_goal_handle = None
-
-                self.current_goal_index += 1
-                if self.current_goal_index < len(self.goal_sequence):
-                    next_coords = self.goal_sequence[self.current_goal_index]
-                    self.get_logger().info(f'Going to next goal: {next_coords}')
-                    self.goto(next_coords)
-                else:
-                    self.get_logger().info("All goals reached.")
-                    self.stop()
-                    self.destroy_node()
-                    rclpy.shutdown()
-                    cv2.destroyAllWindows()
 
     def goal_response_callback(self, future):
         self.current_goal_handle = future.result()
@@ -214,14 +194,23 @@ class Robot(Node):
 
         self.get_logger().info('Goal accepted')
         self.get_result_future = self.current_goal_handle.get_result_async()
+        self.get_result_future.add_done_callback(self.get_result_callback) # defined in main
+
+    # from lab 4
+    def goal_response_callback(self, future):
+        goal_handle = future.result()
+        if not goal_handle.accepted:
+            self.get_logger().info('Goal rejected')
+            return
+
+        self.get_logger().info('Goal accepted')
+        self.get_result_future = goal_handle.get_result_async()
         self.get_result_future.add_done_callback(self.get_result_callback)
 
 
+
     def stop(self):
-        # Use what you learnt in lab 3 to make the robot stop
         desired_velocity = Twist()
-
-
         self.publisher.publish(desired_velocity)
 
 def main():
@@ -246,9 +235,8 @@ def main():
     print("Press Ctrl+C to stop the robot")
     print("Going to green box...")
 
-    robot.goal_sequence = [robot.green_box, robot.red_box, robot.blue_box]
-    robot.current_goal_index = 0
 
+    # Gets the result of the navigation and goes to the next goal
     def new_result_callback(future):
         result = future.result().result
         robot.get_logger().info(f'Navigation result: {result}')
@@ -265,9 +253,10 @@ def main():
             rclpy.shutdown()
             cv2.destroyAllWindows()
 
+    robot.goal_sequence = [robot.green_box, robot.red_box, robot.blue_box]
+    robot.current_goal_index = 0
     robot.get_result_callback = new_result_callback
-
-    robot.goto(robot.goal_sequence[0])
+    robot.goto(robot.goal_sequence[robot.current_goal_index])
 
     try:
         rclpy.spin(robot)
