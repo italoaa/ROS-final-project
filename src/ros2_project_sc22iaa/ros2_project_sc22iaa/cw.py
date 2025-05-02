@@ -1,6 +1,3 @@
-# Exercise 4 - following a colour (green) and stopping upon sight of another (blue).
-
-#from __future__ import division
 import threading
 import sys, time
 import cv2
@@ -17,10 +14,6 @@ import signal
 from math import sin, cos
 
 
-# Need to do three things:
-# 1. Make sure the package builds
-# 2. Use goto point to navigate to the boxes
-# 3. Use the camera to detect the all three RGB colours highlighted with bounding boxes        
 class Robot(Node):
     def __init__(self):
         super().__init__('robot')
